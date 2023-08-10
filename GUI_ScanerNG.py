@@ -9,7 +9,7 @@
 
 
 from PyQt5 import QtCore, QtGui, QtWidgets
-
+import model
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -52,6 +52,8 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
+
+        self.pushButtonStart.clicked.connect(model.add) # алгоритм подключения нажатия кнопки
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
