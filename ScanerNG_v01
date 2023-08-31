@@ -1,0 +1,182 @@
+import cv2
+import numpy as np
+
+width = 0
+height = 0
+# функция подсчета площади квадрата по координатам (принимает картеж списков)
+def calculateTheArea(tupel1):
+    list1 = list(tupel1)
+    return (list1[1][0] - list1[0][0]) * (list1[3][1] - list1[0][0])
+
+def nothing(*arg):
+    pass
+
+def find_rectangle(contours):
+    max_area = 0
+    max_contour = None
+
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area > max_area:
+            max_area = area
+            max_contour = contour
+    # Возвращаем прямоугольник, охватывающий контур с максимальной площадью
+    return cv2.minAreaRect(max_contour)
+
+
+def rotate_image(image, angle):
+
+    rows, cols = image.shape[:2]
+    rotation_matrix = cv2.getRotationMatrix2D((cols / 2, rows / 2), angle, 1)
+    # Применяем аффинное преобразование для поворота изображения
+    rotated_image = cv2.warpAffine(image, rotation_matrix, (cols, rows))
+
+    return rotated_image
+
+# обрезка изображения по размерам прямоугольного объекта, найденного на изображении.
+def crop_image(image, rect):
+    # image`: входное изображение, которое нужно обрезать.
+    # rect`: прямоугольник, охватывающий найденный объект.
+    box = cv2.boxPoints(rect) # получает координаты вершин прямоугольника из `rect`.
+    #box = np.int0(box)
+
+    # извлекают значения ширины и высоты найденного прямоугольника.
+    width = int(rect[1][0])
+    height = int(rect[1][1])
+
+    # борюсь с пульсацией
+    # global width
+    # global height
+    # if width0 >= width:
+    #     width = width0
+    # if height0 >= height:
+    #     height = height0
+
+    src_pts = box.astype("float32")
+    #  определяет новые координаты вершин прямоугольника для обрезанного изображения.
+    dst_pts = np.array([[0, height - 1],
+                        [0, 0],
+                        [width - 1, 0],
+                        [width - 1, height - 1]], dtype="float32")
+
+    # Получаем матрицу преобразования перспективы и обрезаем изображение
+    perspective_transform = cv2.getPerspectiveTransform(src_pts, dst_pts)
+    # Обрезка изображения:
+    cropped_image = cv2.warpPerspective(image, perspective_transform, (width, height))
+
+    return cropped_image
+
+
+def main():
+    camera = cv2.VideoCapture(1)
+    capture = False
+
+    cv2.namedWindow("result")  # создаем главное окно
+    cv2.namedWindow("settings")  # создаем окно настроек
+    cv2.namedWindow("camera")
+
+    # создаем 6 бегунков для настройки начального и конечного цвета фильтра
+    # createTrackbar ('Имя', 'Имя окна', 'начальное значение','максимальное значение','вызов функции при изменение бегунка'
+    cv2.createTrackbar('hue_1', 'settings', 0, 255, nothing)
+    cv2.createTrackbar('satur_1', 'settings', 0, 255, nothing)
+    cv2.createTrackbar('value_1', 'settings', 0, 255, nothing)
+    cv2.createTrackbar('hue_2', 'settings', 213, 255, nothing)
+    cv2.createTrackbar('satur_2', 'settings', 240, 255, nothing)
+    cv2.createTrackbar('value_2', 'settings', 73, 255, nothing)
+    cv2.createTrackbar('Area', 'settings', 89000, 120000, nothing)
+
+    while True:
+        # Захватываем текущий кадр
+        ret, frame = camera.read()
+        # Преобразуем изображение в оттенки серого
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+############
+        # Размываем изображение для устранения шумов
+        #blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+############
+        # считываем значения бегунков
+        h1 = cv2.getTrackbarPos('hue_1', 'settings')
+        s1 = cv2.getTrackbarPos('satur_1', 'settings')
+        v1 = cv2.getTrackbarPos('value_1', 'settings')
+        h2 = cv2.getTrackbarPos('hue_2', 'settings')
+        s2 = cv2.getTrackbarPos('satur_2', 'settings')
+        v2 = cv2.getTrackbarPos('value_2', 'settings')
+        Ar = cv2.getTrackbarPos('Area', 'settings')
+
+        # формируем начальный и конечный цвет фильтра
+        h_min = np.array((h1, s1, v1), np.uint8)
+        h_max = np.array((h2, s2, v2), np.uint8)
+
+        # накладываем фильтр на кадр в модели HSV
+        thresh = cv2.inRange(gray, h_min, h_max)
+
+
+        # Применяем пороговое значение для создания изображения только с черным фоном и белыми контурами объектов
+        _, threshold = cv2.threshold(thresh, 127, 255, cv2.THRESH_BINARY)
+
+        # Находим контуры на пороговом изображении
+        contours, _ = cv2.findContours(threshold, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Находим прямоугольник, охватывающий контур с максимальной площадью
+        rect = find_rectangle(contours)
+        box = cv2.boxPoints(rect)
+        box = np.int0(box)
+
+        cv2.drawContours(frame, [box], 0, (0, 255, 0), 2)
+
+        cropped = crop_image(frame, rect) # переходим к функции обрезки
+        rotated = rotate_image(cropped, rect[2]) # переходим к функции поворота
+
+        cv2.imshow("Original", frame)
+        #cv2.imshow("Rotated", rotated)
+        cv2.imshow("Cropped", cropped)
+
+        key = cv2.waitKey(1)
+        if key == 32:  # Клавиша Пробел
+            cv2.imwrite("foto.jpg", cropped)
+            capture = True
+            print("Фото сохранено!")
+
+            image1 = cv2.imread('foto.jpg')
+            image2 = cv2.imread('foto1.jpg')
+
+            gray_image1 = cv2.cvtColor(image1, cv2.COLOR_BGR2GRAY)
+            gray_image2 = cv2.cvtColor(image2, cv2.COLOR_BGR2GRAY)
+
+            # код для обрезки
+            img = cv2.imread("Scripts/foto.jpg")
+            # Prepare crop area
+            width, height = 283, 189
+            x, y = 43, 50
+            # Crop image to specified area using slicing
+            crop_img = img[y:y + height, x:x + width]
+            cv2.imwrite("foto.jpg", crop_img)
+
+
+            # Вычисление разности между двумя изображениями
+            difference = cv2.absdiff(gray_image1, gray_image2)
+
+            # Установка порога для определения различий
+            threshold = 30
+
+            # Преобразование разности в черно-белое изображение, где белый цвет обозначает наличие различий
+            _, thresholded_difference = cv2.threshold(difference, threshold, 255, cv2.THRESH_BINARY)
+
+            cv2.imwrite('foto3.jpg', thresholded_difference)
+            print('Файл foto3.jpg успешно создан.')
+
+
+
+        if capture and key != 32:
+            capture = False
+
+        if key == 27:  # Клавиша Esc
+            break
+
+
+    camera.release()
+    cv2.destroyAllWindows()
+
+
+if __name__ == '__main__':
+    main()
